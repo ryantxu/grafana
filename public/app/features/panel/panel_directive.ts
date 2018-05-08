@@ -22,7 +22,7 @@ var panelTemplate = `
 
     <div class="panel-content">
       <div class="panel-height-helper">
-        <div><ng-transclude ></ng-transclude></div>
+        <ng-transclude ></ng-transclude>
       </div>
     </div>
   </div>
