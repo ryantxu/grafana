@@ -4,8 +4,8 @@ import { GRID_CELL_HEIGHT, GRID_CELL_VMARGIN, GRID_COLUMN_COUNT } from 'app/core
 import { DashboardPanel } from './DashboardPanel';
 import { DashboardModel } from '../dashboard_model';
 import { PanelContainer } from './PanelContainer';
+import { PanelObserver } from './PanelObserver';
 import { PanelModel } from '../panel_model';
-import { LazyLoader } from './LazyLoader';
 import classNames from 'classnames';
 import sizeMe from 'react-sizeme';
 
@@ -69,9 +69,7 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
   panelContainer: PanelContainer;
   dashboard: DashboardModel;
   panelMap: { [id: string]: PanelModel };
-  lazy: LazyLoader;
-
-  element: any;
+  observer: PanelObserver;
 
   constructor(props) {
     super(props);
@@ -83,7 +81,7 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
     this.onWidthChange = this.onWidthChange.bind(this);
 
     this.state = { animated: false };
-    this.lazy = new LazyLoader();
+    this.observer = new PanelObserver();
 
     // subscribe to dashboard events
     this.dashboard = this.panelContainer.getDashboard();
@@ -98,16 +96,6 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
   buildLayout() {
     const layout = [];
     this.panelMap = {};
-
-    // add a flag to enable/disable this feature?
-    if (true) {
-      for (let i = 5; i < this.dashboard.panels.length; i++) {
-        let p = this.dashboard.panels[i];
-        if (typeof p.lazyloading === 'undefined') {
-          p.lazyloading = true;
-        }
-      }
-    }
 
     for (let panel of this.dashboard.panels) {
       let stringId = panel.id.toString();
@@ -163,9 +151,6 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
     // react-grid-layout has a bug (#670), and onLayoutChange() is only called when the component is mounted.
     // So it's required to call it explicitly when panel resized or moved to save layout changes.
     this.onLayoutChange(layout);
-
-    // Check all panels
-    this.lazy.checkVisibility(true);
   }
 
   onResize(layout, oldItem, newItem) {
@@ -175,15 +160,10 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
   onResizeStop(layout, oldItem, newItem) {
     this.updateGridPos(newItem, layout);
     this.panelMap[newItem.i].resizeDone();
-    this.lazy.checkVisibility(true);
   }
 
   onDragStop(layout, oldItem, newItem) {
     this.updateGridPos(newItem, layout);
-  }
-
-  forceRender() {
-    this.setState(this.state);
   }
 
   componentDidMount() {
@@ -192,26 +172,22 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
         return { animated: true };
       });
     });
-
-    // Point the lazy loader to the scrolling element
-    this.lazy.init(
-      this.element.domEl.parentElement.parentElement.parentElement,
-      this.forceRender.bind(this) // render after a change
-    );
-  }
-
-  componentWillUnmount() {
-    this.lazy.updateScrollListener(true); // remove the scroll listener
   }
 
   renderPanels() {
     const panelElements = [];
 
+    let idx = 0;
     for (let panel of this.dashboard.panels) {
       const panelClasses = classNames({ panel: true, 'panel--fullscreen': panel.fullscreen });
       panelElements.push(
-        <div key={panel.id.toString()} ref={el => this.lazy.register(panel, el)} className={panelClasses}>
-          <DashboardPanel panel={panel} lazy={panel.lazyloading} getPanelContainer={this.props.getPanelContainer} />
+        <div key={panel.id.toString()} className={panelClasses}>
+          <DashboardPanel
+            panel={panel}
+            index={idx++}
+            observer={this.observer}
+            getPanelContainer={this.props.getPanelContainer}
+          />
         </div>
       );
     }
@@ -222,7 +198,6 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
   render() {
     return (
       <SizedReactLayoutGrid
-        ref={element => (this.element = element)}
         className={classNames({ layout: true, animated: this.state.animated })}
         layout={this.buildLayout()}
         isResizable={this.dashboard.meta.canEdit}

@@ -4,7 +4,7 @@ import { coreModule } from 'app/core/core';
 var template = `
 <span class="panel-title">
   <span class="icon-gf panel-alert-icon"></span>
-  <span class="panel-title-text">{{ctrl.panel.title | interpolateTemplateVars:this}}</span>
+  <span class="panel-title-text">{{ctrl.panel.title | interpolateTemplateVars:this}} / {{ctrl.panel.visible}}</span>
   <span class="panel-menu-container dropdown">
     <span class="fa fa-caret-down panel-menu-toggle" data-toggle="dropdown"></span>
     <ul class="dropdown-menu dropdown-menu--menu panel-menu" role="menu">
@@ -25,7 +25,7 @@ var template = `
       <li><a ng-click="ctrl.addDataQuery(datasource);"><i class="fa fa-trash"></i> Remove</a></li>
     </ul>
   </span>
-  <span class="panel-time-info" ng-show="ctrl.timeInfo"><i class="fa fa-clock-o"></i> {{ctrl.timeInfo}}</span>
+  <span class="panel-time-info" ng-if="ctrl.timeInfo"><i class="fa fa-clock-o"></i> {{ctrl.timeInfo}}</span>
 </span>`;
 
 function renderMenuItem(item, ctrl) {
