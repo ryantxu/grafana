@@ -1,4 +1,4 @@
-import { PanelModel } from '../panel_model';
+import { PanelModel } from 'app/features/dashboard/state/PanelModel';
 
 import 'intersection-observer';
 

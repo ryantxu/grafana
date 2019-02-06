@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	ms "github.com/go-macaron/session"
+	msession "github.com/go-macaron/session"
 	"github.com/grafana/grafana/pkg/bus"
 	m "github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/services/session"
@@ -41,11 +41,6 @@ func TestMiddlewareContext(t *testing.T) {
 		middlewareScenario("middleware should not add Cache-Control header to for non-API GET requests", func(sc *scenarioContext) {
 			sc.fakeReq("GET", "/").exec()
 			So(sc.resp.Header().Get("Cache-Control"), ShouldBeEmpty)
-		})
-
-		middlewareScenario("Non api request should init session", func(sc *scenarioContext) {
-			sc.fakeReq("GET", "/").exec()
-			So(sc.resp.Header().Get("Set-Cookie"), ShouldContainSubstring, "grafana_sess")
 		})
 
 		middlewareScenario("Invalid api key", func(sc *scenarioContext) {
@@ -151,22 +146,17 @@ func TestMiddlewareContext(t *testing.T) {
 			})
 		})
 
-		middlewareScenario("UserId in session", func(sc *scenarioContext) {
-
-			sc.fakeReq("GET", "/").handler(func(c *m.ReqContext) {
-				c.Session.Set(session.SESS_KEY_USERID, int64(12))
-			}).exec()
-
-			bus.AddHandler("test", func(query *m.GetSignedInUserQuery) error {
-				query.Result = &m.SignedInUser{OrgId: 2, UserId: 12}
-				return nil
-			})
+		middlewareScenario("Auth token service", func(sc *scenarioContext) {
+			var wasCalled bool
+			sc.userAuthTokenService.initContextWithTokenProvider = func(ctx *m.ReqContext, orgId int64) bool {
+				wasCalled = true
+				return false
+			}
 
 			sc.fakeReq("GET", "/").exec()
 
-			Convey("should init context with user info", func() {
-				So(sc.context.IsSignedIn, ShouldBeTrue)
-				So(sc.context.UserId, ShouldEqual, 12)
+			Convey("should call middleware", func() {
+				So(wasCalled, ShouldBeTrue)
 			})
 		})
 
@@ -211,6 +201,7 @@ func TestMiddlewareContext(t *testing.T) {
 				return nil
 			})
 
+			setting.SessionOptions = msession.Options{}
 			sc.fakeReq("GET", "/")
 			sc.req.Header.Add("X-WEBAUTH-USER", "torkelo")
 			sc.exec()
@@ -271,6 +262,23 @@ func TestMiddlewareContext(t *testing.T) {
 			})
 		})
 
+		middlewareScenario("When auth_proxy is enabled and IPv4 request RemoteAddr is not within trusted CIDR block", func(sc *scenarioContext) {
+			setting.AuthProxyEnabled = true
+			setting.AuthProxyHeaderName = "X-WEBAUTH-USER"
+			setting.AuthProxyHeaderProperty = "username"
+			setting.AuthProxyWhitelist = "192.168.1.0/24, 2001::0/120"
+
+			sc.fakeReq("GET", "/")
+			sc.req.Header.Add("X-WEBAUTH-USER", "torkelo")
+			sc.req.RemoteAddr = "192.168.3.1:12345"
+			sc.exec()
+
+			Convey("should return 407 status code", func() {
+				So(sc.resp.Code, ShouldEqual, 407)
+				So(sc.resp.Body.String(), ShouldContainSubstring, "Request for user (torkelo) from 192.168.3.1 is not from the authentication proxy")
+			})
+		})
+
 		middlewareScenario("When auth_proxy is enabled and IPv6 request RemoteAddr is not trusted", func(sc *scenarioContext) {
 			setting.AuthProxyEnabled = true
 			setting.AuthProxyHeaderName = "X-WEBAUTH-USER"
@@ -288,11 +296,84 @@ func TestMiddlewareContext(t *testing.T) {
 			})
 		})
 
+		middlewareScenario("When auth_proxy is enabled and IPv6 request RemoteAddr is not within trusted CIDR block", func(sc *scenarioContext) {
+			setting.AuthProxyEnabled = true
+			setting.AuthProxyHeaderName = "X-WEBAUTH-USER"
+			setting.AuthProxyHeaderProperty = "username"
+			setting.AuthProxyWhitelist = "192.168.1.0/24, 2001::0/120"
+
+			sc.fakeReq("GET", "/")
+			sc.req.Header.Add("X-WEBAUTH-USER", "torkelo")
+			sc.req.RemoteAddr = "[2001:23]:12345"
+			sc.exec()
+
+			Convey("should return 407 status code", func() {
+				So(sc.resp.Code, ShouldEqual, 407)
+				So(sc.resp.Body.String(), ShouldContainSubstring, "Request for user (torkelo) from 2001:23 is not from the authentication proxy")
+			})
+		})
+
 		middlewareScenario("When auth_proxy is enabled and request RemoteAddr is trusted", func(sc *scenarioContext) {
 			setting.AuthProxyEnabled = true
 			setting.AuthProxyHeaderName = "X-WEBAUTH-USER"
 			setting.AuthProxyHeaderProperty = "username"
 			setting.AuthProxyWhitelist = "192.168.1.1, 2001::23"
+
+			bus.AddHandler("test", func(query *m.GetSignedInUserQuery) error {
+				query.Result = &m.SignedInUser{OrgId: 4, UserId: 33}
+				return nil
+			})
+
+			bus.AddHandler("test", func(cmd *m.UpsertUserCommand) error {
+				cmd.Result = &m.User{Id: 33}
+				return nil
+			})
+
+			sc.fakeReq("GET", "/")
+			sc.req.Header.Add("X-WEBAUTH-USER", "torkelo")
+			sc.req.RemoteAddr = "[2001::23]:12345"
+			sc.exec()
+
+			Convey("Should init context with user info", func() {
+				So(sc.context.IsSignedIn, ShouldBeTrue)
+				So(sc.context.UserId, ShouldEqual, 33)
+				So(sc.context.OrgId, ShouldEqual, 4)
+			})
+		})
+
+		middlewareScenario("When auth_proxy is enabled and IPv4 request RemoteAddr is within trusted CIDR block", func(sc *scenarioContext) {
+			setting.AuthProxyEnabled = true
+			setting.AuthProxyHeaderName = "X-WEBAUTH-USER"
+			setting.AuthProxyHeaderProperty = "username"
+			setting.AuthProxyWhitelist = "192.168.1.0/24, 2001::0/120"
+
+			bus.AddHandler("test", func(query *m.GetSignedInUserQuery) error {
+				query.Result = &m.SignedInUser{OrgId: 4, UserId: 33}
+				return nil
+			})
+
+			bus.AddHandler("test", func(cmd *m.UpsertUserCommand) error {
+				cmd.Result = &m.User{Id: 33}
+				return nil
+			})
+
+			sc.fakeReq("GET", "/")
+			sc.req.Header.Add("X-WEBAUTH-USER", "torkelo")
+			sc.req.RemoteAddr = "192.168.1.10:12345"
+			sc.exec()
+
+			Convey("Should init context with user info", func() {
+				So(sc.context.IsSignedIn, ShouldBeTrue)
+				So(sc.context.UserId, ShouldEqual, 33)
+				So(sc.context.OrgId, ShouldEqual, 4)
+			})
+		})
+
+		middlewareScenario("When auth_proxy is enabled and IPv6 request RemoteAddr is within trusted CIDR block", func(sc *scenarioContext) {
+			setting.AuthProxyEnabled = true
+			setting.AuthProxyHeaderName = "X-WEBAUTH-USER"
+			setting.AuthProxyHeaderProperty = "username"
+			setting.AuthProxyWhitelist = "192.168.1.0/24, 2001::0/120"
 
 			bus.AddHandler("test", func(query *m.GetSignedInUserQuery) error {
 				query.Result = &m.SignedInUser{OrgId: 4, UserId: 33}
@@ -389,6 +470,7 @@ func middlewareScenario(desc string, fn scenarioFunc) {
 		defer bus.ClearBusHandlers()
 
 		sc := &scenarioContext{}
+
 		viewsPath, _ := filepath.Abs("../../public/views")
 
 		sc.m = macaron.New()
@@ -397,10 +479,13 @@ func middlewareScenario(desc string, fn scenarioFunc) {
 			Delims:    macaron.Delims{Left: "[[", Right: "]]"},
 		}))
 
-		sc.m.Use(GetContextHandler())
+		session.Init(&msession.Options{}, 0)
+		sc.userAuthTokenService = newFakeUserAuthTokenService()
+		sc.m.Use(GetContextHandler(sc.userAuthTokenService))
 		// mock out gc goroutine
 		session.StartSessionGC = func() {}
-		sc.m.Use(Sessioner(&ms.Options{}, 0))
+		setting.SessionOptions = msession.Options{}
+
 		sc.m.Use(OrgRedirect())
 		sc.m.Use(AddDefaultResponseHeaders())
 
@@ -418,15 +503,16 @@ func middlewareScenario(desc string, fn scenarioFunc) {
 }
 
 type scenarioContext struct {
-	m              *macaron.Macaron
-	context        *m.ReqContext
-	resp           *httptest.ResponseRecorder
-	apiKey         string
-	authHeader     string
-	respJson       map[string]interface{}
-	handlerFunc    handlerFunc
-	defaultHandler macaron.Handler
-	url            string
+	m                    *macaron.Macaron
+	context              *m.ReqContext
+	resp                 *httptest.ResponseRecorder
+	apiKey               string
+	authHeader           string
+	respJson             map[string]interface{}
+	handlerFunc          handlerFunc
+	defaultHandler       macaron.Handler
+	url                  string
+	userAuthTokenService *fakeUserAuthTokenService
 
 	req *http.Request
 }
@@ -495,3 +581,25 @@ func (sc *scenarioContext) exec() {
 
 type scenarioFunc func(c *scenarioContext)
 type handlerFunc func(c *m.ReqContext)
+
+type fakeUserAuthTokenService struct {
+	initContextWithTokenProvider func(ctx *m.ReqContext, orgID int64) bool
+}
+
+func newFakeUserAuthTokenService() *fakeUserAuthTokenService {
+	return &fakeUserAuthTokenService{
+		initContextWithTokenProvider: func(ctx *m.ReqContext, orgID int64) bool {
+			return false
+		},
+	}
+}
+
+func (s *fakeUserAuthTokenService) InitContextWithToken(ctx *m.ReqContext, orgID int64) bool {
+	return s.initContextWithTokenProvider(ctx, orgID)
+}
+
+func (s *fakeUserAuthTokenService) UserAuthenticatedHook(user *m.User, c *m.ReqContext) error {
+	return nil
+}
+
+func (s *fakeUserAuthTokenService) SignOutUser(c *m.ReqContext) error { return nil }

@@ -1,31 +1,44 @@
 // Libraries
-import React, { ComponentClass, PureComponent } from 'react';
+import React, { PureComponent } from 'react';
+import { AutoSizer } from 'react-virtualized';
 
 // Services
-import { getTimeSrv } from '../time_srv';
+import { getTimeSrv, TimeSrv } from '../services/TimeSrv';
 
 // Components
 import { PanelHeader } from './PanelHeader/PanelHeader';
 import { DataPanel } from './DataPanel';
 
+// Utils
+import { applyPanelTimeOverrides } from 'app/features/dashboard/utils/panel';
+import { PANEL_HEADER_HEIGHT } from 'app/core/constants';
+import { profiler } from 'app/core/profiler';
+
 // Types
-import { PanelModel } from '../panel_model';
-import { DashboardModel } from '../dashboard_model';
-import { TimeRange, PanelProps } from 'app/types';
+import { DashboardModel, PanelModel } from '../state';
+import { PanelPlugin } from 'app/types';
+import { TimeRange, LoadingState } from '@grafana/ui';
+
+import variables from 'sass/_variables.scss';
+import templateSrv from 'app/features/templating/template_srv';
+import { DataQueryResponse } from '@grafana/ui/src';
 
 export interface Props {
   panel: PanelModel;
   dashboard: DashboardModel;
-  component: ComponentClass<PanelProps>;
+  plugin: PanelPlugin;
 }
 
 export interface State {
   refreshCounter: number;
   renderCounter: number;
+  timeInfo?: string;
   timeRange?: TimeRange;
 }
 
 export class PanelChrome extends PureComponent<Props, State> {
+  timeSrv: TimeSrv = getTimeSrv();
+
   constructor(props) {
     super(props);
 
@@ -46,62 +59,115 @@ export class PanelChrome extends PureComponent<Props, State> {
   }
 
   onRefresh = () => {
-    const timeSrv = getTimeSrv();
-    const timeRange = timeSrv.timeRange();
+    console.log('onRefresh');
+    if (!this.isVisible) {
+      return;
+    }
 
-    this.setState(prevState => ({
-      ...prevState,
+    const { panel } = this.props;
+    const timeData = applyPanelTimeOverrides(panel, this.timeSrv.timeRange());
+
+    this.setState({
       refreshCounter: this.state.refreshCounter + 1,
-      timeRange: timeRange,
-    }));
+      timeRange: timeData.timeRange,
+      timeInfo: timeData.timeInfo,
+    });
   };
 
   onRender = () => {
-    console.log('onRender');
-    this.setState(prevState => ({
-      ...prevState,
+    this.setState({
       renderCounter: this.state.renderCounter + 1,
-    }));
+    });
+  };
+
+  onInterpolate = (value: string, format?: string) => {
+    return templateSrv.replace(value, this.props.panel.scopedVars, format);
+  };
+
+  onDataResponse = (dataQueryResponse: DataQueryResponse) => {
+    if (this.props.dashboard.isSnapshot()) {
+      this.props.panel.snapshotData = dataQueryResponse.data;
+    }
   };
 
   get isVisible() {
+    console.log( 'CHECK visible', this);
+
     return !this.props.dashboard.otherPanelInFullscreen(this.props.panel);
+  }
+
+  renderPanel(loading, panelData, width, height): JSX.Element {
+    const { panel, plugin } = this.props;
+    const { timeRange, renderCounter } = this.state;
+    const PanelComponent = plugin.exports.Panel;
+
+    // This is only done to increase a counter that is used by backend
+    // image rendering (phantomjs/headless chrome) to know when to capture image
+    if (loading === LoadingState.Done) {
+      profiler.renderingCompleted(panel.id);
+    }
+
+    return (
+      <div className="panel-content">
+        <PanelComponent
+          loading={loading}
+          panelData={panelData}
+          timeRange={timeRange}
+          options={panel.getOptions(plugin.exports.PanelDefaults)}
+          width={width - 2 * variables.panelHorizontalPadding}
+          height={height - PANEL_HEADER_HEIGHT - variables.panelVerticalPadding}
+          renderCounter={renderCounter}
+          onInterpolate={this.onInterpolate}
+        />
+      </div>
+    );
   }
 
   render() {
     const { panel, dashboard } = this.props;
-    const { refreshCounter, timeRange, renderCounter } = this.state;
+    const { refreshCounter, timeRange, timeInfo } = this.state;
 
-    const { datasource, targets } = panel;
-    const PanelComponent = this.props.component;
-
-    console.log('panelChrome render');
+    const { datasource, targets, transparent } = panel;
+    const containerClassNames = `panel-container panel-container--absolute ${transparent ? 'panel-transparent' : ''}`;
     return (
-      <div className="panel-container">
-        <PanelHeader panel={panel} dashboard={dashboard} />
-        <div className="panel-content">
-          <DataPanel
-            datasource={datasource}
-            queries={targets}
-            timeRange={timeRange}
-            isVisible={this.isVisible}
-            refreshCounter={refreshCounter}
-          >
-            {({ loading, timeSeries }) => {
-              console.log('panelcrome inner render');
-              return (
-                <PanelComponent
-                  loading={loading}
-                  timeSeries={timeSeries}
+      <AutoSizer>
+        {({ width, height }) => {
+          if (width === 0) {
+            return null;
+          }
+
+          return (
+            <div className={containerClassNames}>
+              <PanelHeader
+                panel={panel}
+                dashboard={dashboard}
+                timeInfo={timeInfo}
+                title={panel.title}
+                description={panel.description}
+                scopedVars={panel.scopedVars}
+                links={panel.links}
+              />
+              {panel.snapshotData ? (
+                this.renderPanel(false, panel.snapshotData, width, height)
+              ) : (
+                <DataPanel
+                  datasource={datasource}
+                  queries={targets}
                   timeRange={timeRange}
-                  options={panel.getOptions()}
-                  renderCounter={renderCounter}
-                />
-              );
-            }}
-          </DataPanel>
-        </div>
-      </div>
+                  isVisible={this.isVisible}
+                  widthPixels={width}
+                  refreshCounter={refreshCounter}
+                  onDataResponse={this.onDataResponse}
+                >
+                  {({ loading, panelData }) => {
+                    return this.renderPanel(loading, panelData, width, height);
+                  }}
+                </DataPanel>
+              )}
+            </div>
+          );
+        }}
+      </AutoSizer>
     );
   }
 }

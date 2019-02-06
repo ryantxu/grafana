@@ -12,8 +12,8 @@ weight = 11
 
 # Using Google Stackdriver in Grafana
 
-> Only available in Grafana v5.3+.
-> The datasource is currently a beta feature and is subject to change.
+> Available as a beta feature in Grafana v5.3.x and v5.4.x.
+> Officially released in Grafana v6.0.0
 
 Grafana ships with built-in support for Google Stackdriver. Just add it as a datasource and you are ready to build dashboards for your Stackdriver metrics.
 
@@ -158,9 +158,9 @@ Example Result: `compute.googleapis.com/instance/cpu/usage_time - server1-prod`
 
 It is also possible to resolve the name of the Monitored Resource Type. 
 
-| Alias Pattern Format     | Description                                     | Example Result   |
-| ------------------------ | ------------------------------------------------| ---------------- |
-| `{{resource.type}}`      | returns the name of the monitored resource type | `gce_instance`     |
+| Alias Pattern Format | Description                                     | Example Result |
+| -------------------- | ----------------------------------------------- | -------------- |
+| `{{resource.type}}`  | returns the name of the monitored resource type | `gce_instance` |
 
 Example Alias By: `{{resource.type}} - {{metric.type}}`
 
@@ -177,7 +177,17 @@ types of template variables.
 
 ### Query Variable
 
-Writing variable queries is not supported yet.
+Variable of the type *Query* allows you to query Stackdriver for various types of data. The Stackdriver data source plugin provides the following `Query Types`.
+
+| Name                | Description                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------- |
+| *Metric Types*      | Returns a list of metric type names that are available for the specified service.                 |
+| *Labels Keys*       | Returns a list of keys for `metric label` and `resource label` in the specified metric.           |
+| *Labels Values*     | Returns a list of values for the label in the specified metric.                                   |
+| *Resource Types*    | Returns a list of resource types for the the specified metric.                                    |
+| *Aggregations*      | Returns a list of aggregations (cross series reducers) for the the specified metric.              |
+| *Aligners*          | Returns a list of aligners (per series aligners) for the the specified metric.                    |
+| *Alignment periods* | Returns a list of all alignment periods that are available in Stackdriver query editor in Grafana |
 
 ### Using variables in queries
 

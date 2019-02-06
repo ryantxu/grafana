@@ -1,14 +1,31 @@
 import React from 'react';
-import ReactGridLayout from 'react-grid-layout';
+import { hot } from 'react-hot-loader';
+import ReactGridLayout, { ItemCallback } from 'react-grid-layout';
 import { GRID_CELL_HEIGHT, GRID_CELL_VMARGIN, GRID_COLUMN_COUNT } from 'app/core/constants';
 import { DashboardPanel } from './DashboardPanel';
-import { DashboardModel } from '../dashboard_model';
-import { PanelModel } from '../panel_model';
+import { DashboardModel } from '../state/DashboardModel';
+import { PanelModel } from '../state/PanelModel';
 import { PanelObserver, PanelObserverIntersection } from './PanelObserver';
 import classNames from 'classnames';
 import sizeMe from 'react-sizeme';
 
 let lastGridWidth = 1200;
+let ignoreNextWidthChange = false;
+
+interface GridWrapperProps {
+  size: { width: number; };
+  layout: ReactGridLayout.Layout[];
+  onLayoutChange: (layout: ReactGridLayout.Layout[]) => void;
+  children: JSX.Element | JSX.Element[];
+  onDragStop: ItemCallback;
+  onResize: ItemCallback;
+  onResizeStop: ItemCallback;
+  onWidthChange: () => void;
+  className: string;
+  isResizable?: boolean;
+  isDraggable?: boolean;
+  isFullscreen?: boolean;
+}
 
 function GridWrapper({
   size,
@@ -23,10 +40,14 @@ function GridWrapper({
   isResizable,
   isDraggable,
   isFullscreen,
-}) {
+}: GridWrapperProps)  {
   const width = size.width > 0 ? size.width : lastGridWidth;
+
+  // logic to ignore width changes (optimization)
   if (width !== lastGridWidth) {
-    if (!isFullscreen && Math.abs(width - lastGridWidth) > 8) {
+    if (ignoreNextWidthChange) {
+      ignoreNextWidthChange = false;
+    } else if (!isFullscreen && Math.abs(width - lastGridWidth) > 8) {
       onWidthChange();
       lastGridWidth = width;
     }
@@ -38,9 +59,8 @@ function GridWrapper({
       className={className}
       isDraggable={isDraggable}
       isResizable={isResizable}
-      measureBeforeMount={false}
       containerPadding={[0, 0]}
-      useCSSTransforms={true}
+      useCSSTransforms={false}
       margin={[GRID_CELL_VMARGIN, GRID_CELL_VMARGIN]}
       cols={GRID_COLUMN_COUNT}
       rowHeight={GRID_CELL_HEIGHT}
@@ -62,30 +82,24 @@ export interface DashboardGridProps {
   dashboard: DashboardModel;
 }
 
-export class DashboardGrid extends React.Component<DashboardGridProps, any> {
+export class DashboardGrid extends React.Component<DashboardGridProps> {
   gridToPanelMap: any;
   panelMap: { [id: string]: PanelModel };
   observer: PanelObserver;
 
-  constructor(props) {
+  constructor(props: DashboardGridProps) {
     super(props);
-    this.onLayoutChange = this.onLayoutChange.bind(this);
-    this.onResize = this.onResize.bind(this);
-    this.onResizeStop = this.onResizeStop.bind(this);
-    this.onDragStop = this.onDragStop.bind(this);
-    this.onWidthChange = this.onWidthChange.bind(this);
 
-    this.state = { animated: false };
     this.observer = new PanelObserverIntersection();
 
     // subscribe to dashboard events
     const dashboard = this.props.dashboard;
-    dashboard.on('panel-added', this.triggerForceUpdate.bind(this));
-    dashboard.on('panel-removed', this.triggerForceUpdate.bind(this));
-    dashboard.on('repeats-processed', this.triggerForceUpdate.bind(this));
-    dashboard.on('view-mode-changed', this.onViewModeChanged.bind(this));
-    dashboard.on('row-collapsed', this.triggerForceUpdate.bind(this));
-    dashboard.on('row-expanded', this.triggerForceUpdate.bind(this));
+    dashboard.on('panel-added', this.triggerForceUpdate);
+    dashboard.on('panel-removed', this.triggerForceUpdate);
+    dashboard.on('repeats-processed', this.triggerForceUpdate);
+    dashboard.on('view-mode-changed', this.onViewModeChanged);
+    dashboard.on('row-collapsed', this.triggerForceUpdate);
+    dashboard.on('row-expanded', this.triggerForceUpdate);
   }
 
   buildLayout() {
@@ -122,7 +136,7 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
     return layout;
   }
 
-  onLayoutChange(newLayout) {
+  onLayoutChange = (newLayout: ReactGridLayout.Layout[]) => {
     for (const newPos of newLayout) {
       this.panelMap[newPos.i].updateGridPos(newPos);
     }
@@ -130,21 +144,22 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
     this.props.dashboard.sortPanelsByGridPos();
   }
 
-  triggerForceUpdate() {
+  triggerForceUpdate = () => {
     this.forceUpdate();
   }
 
-  onWidthChange() {
+  onWidthChange = () => {
     for (const panel of this.props.dashboard.panels) {
       panel.resizeDone();
     }
   }
 
-  onViewModeChanged(payload) {
-    this.setState({ animated: !payload.fullscreen });
+  onViewModeChanged = () => {
+    ignoreNextWidthChange = true;
+    this.forceUpdate();
   }
 
-  updateGridPos(item, layout) {
+  updateGridPos = (item: ReactGridLayout.Layout, layout: ReactGridLayout.Layout[]) => {
     this.panelMap[item.i].updateGridPos(item);
 
     // react-grid-layout has a bug (#670), and onLayoutChange() is only called when the component is mounted.
@@ -152,23 +167,18 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
     this.onLayoutChange(layout);
   }
 
-  onResize(layout, oldItem, newItem) {
+  onResize: ItemCallback = (layout, oldItem, newItem) => {
+    console.log();
     this.panelMap[newItem.i].updateGridPos(newItem);
   }
 
-  onResizeStop(layout, oldItem, newItem) {
+  onResizeStop: ItemCallback = (layout, oldItem, newItem) => {
     this.updateGridPos(newItem, layout);
     this.panelMap[newItem.i].resizeDone();
   }
 
-  onDragStop(layout, oldItem, newItem) {
+  onDragStop: ItemCallback = (layout, oldItem, newItem) => {
     this.updateGridPos(newItem, layout);
-  }
-
-  componentDidMount() {
-    setTimeout(() => {
-      this.setState({ animated: true });
-    });
   }
 
   componentWillUnmount() {
@@ -179,14 +189,14 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
     const panelElements = [];
 
     for (const panel of this.props.dashboard.panels) {
-      const panelClasses = classNames({ panel: true, 'panel--fullscreen': panel.fullscreen });
+      const panelClasses = classNames(
+        { 'react-grid-item--fullscreen': panel.fullscreen });
       panelElements.push(
         <div
+          id={`panel-${panel.id}`}
           key={panel.id.toString()}
           className={panelClasses}
-          id={`panel-${panel.id.toString()}`}
-          ref={e => this.observer.watch(e, panel)}
-        >
+          ref={e => this.observer.watch(e, panel)}>
           <DashboardPanel
             panel={panel}
             dashboard={this.props.dashboard}
@@ -203,7 +213,7 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
   render() {
     return (
       <SizedReactLayoutGrid
-        className={classNames({ layout: true, animated: this.state.animated })}
+        className={classNames({ layout: true })}
         layout={this.buildLayout()}
         isResizable={this.props.dashboard.meta.canEdit}
         isDraggable={this.props.dashboard.meta.canEdit}
@@ -219,3 +229,5 @@ export class DashboardGrid extends React.Component<DashboardGridProps, any> {
     );
   }
 }
+
+export default hot(module)(DashboardGrid);

@@ -133,7 +133,7 @@ func (hs *HTTPServer) getFrontendSettingsMap(c *m.ReqContext) (map[string]interf
 
 	panels := map[string]interface{}{}
 	for _, panel := range enabledPlugins.Panels {
-		if panel.State == "alpha" && !hs.Cfg.EnableAlphaPanels {
+		if panel.State == plugins.PluginStateAlpha && !hs.Cfg.EnableAlphaPanels {
 			continue
 		}
 
@@ -165,6 +165,8 @@ func (hs *HTTPServer) getFrontendSettingsMap(c *m.ReqContext) (map[string]interf
 		"externalUserMngInfo":        setting.ExternalUserMngInfo,
 		"externalUserMngLinkUrl":     setting.ExternalUserMngLinkUrl,
 		"externalUserMngLinkName":    setting.ExternalUserMngLinkName,
+		"viewersCanEdit":             setting.ViewersCanEdit,
+		"disableSanitizeHtml":        hs.Cfg.DisableSanitizeHtml,
 		"buildInfo": map[string]interface{}{
 			"version":       setting.BuildVersion,
 			"commit":        setting.BuildCommit,
@@ -186,16 +188,18 @@ func getPanelSort(id string) int {
 		sort = 1
 	case "singlestat":
 		sort = 2
-	case "table":
+	case "gauge":
 		sort = 3
-	case "text":
+	case "table":
 		sort = 4
-	case "heatmap":
+	case "text":
 		sort = 5
-	case "alertlist":
+	case "heatmap":
 		sort = 6
-	case "dashlist":
+	case "alertlist":
 		sort = 7
+	case "dashlist":
+		sort = 8
 	}
 	return sort
 }

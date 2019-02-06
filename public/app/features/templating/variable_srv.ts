@@ -6,23 +6,34 @@ import _ from 'lodash';
 import coreModule from 'app/core/core_module';
 import { variableTypes } from './variable';
 import { Graph } from 'app/core/utils/dag';
+import { TemplateSrv } from 'app/features/templating/template_srv';
+import { TimeSrv } from 'app/features/dashboard/services/TimeSrv';
+import { DashboardModel } from 'app/features/dashboard/state/DashboardModel';
+
+// Types
+import { TimeRange } from '@grafana/ui/src';
 
 export class VariableSrv {
-  dashboard: any;
-  variables: any;
+  dashboard: DashboardModel;
+  variables: any[];
 
   /** @ngInject */
-  constructor(private $rootScope, private $q, private $location, private $injector, private templateSrv) {
+  constructor(private $rootScope,
+              private $q,
+              private $location,
+              private $injector,
+              private templateSrv: TemplateSrv,
+              private timeSrv: TimeSrv) {
     $rootScope.$on('template-variable-value-updated', this.updateUrlParamsWithCurrentVariables.bind(this), $rootScope);
   }
 
-  init(dashboard) {
+  init(dashboard: DashboardModel) {
     this.dashboard = dashboard;
     this.dashboard.events.on('time-range-updated', this.onTimeRangeUpdated.bind(this));
 
     // create working class models representing variables
     this.variables = dashboard.templating.list = dashboard.templating.list.map(this.createVariableFromModel.bind(this));
-    this.templateSrv.init(this.variables);
+    this.templateSrv.init(this.variables, this.timeSrv.timeRange());
 
     // init variables
     for (const variable of this.variables) {
@@ -37,11 +48,12 @@ export class VariableSrv {
         })
       )
       .then(() => {
-        this.templateSrv.updateTemplateData();
+        this.templateSrv.updateIndex();
       });
   }
 
-  onTimeRangeUpdated() {
+  onTimeRangeUpdated(timeRange: TimeRange) {
+    this.templateSrv.updateTimeRange(timeRange);
     const promises = this.variables.filter(variable => variable.refresh === 2).map(variable => {
       const previousOptions = variable.options.slice();
 
@@ -100,14 +112,14 @@ export class VariableSrv {
 
   addVariable(variable) {
     this.variables.push(variable);
-    this.templateSrv.updateTemplateData();
+    this.templateSrv.updateIndex();
     this.dashboard.updateSubmenuVisibility();
   }
 
   removeVariable(variable) {
     const index = _.indexOf(this.variables, variable);
     this.variables.splice(index, 1);
-    this.templateSrv.updateTemplateData();
+    this.templateSrv.updateIndex();
     this.dashboard.updateSubmenuVisibility();
   }
 
@@ -132,7 +144,7 @@ export class VariableSrv {
 
     return this.$q.all(promises).then(() => {
       if (emitChangeEvents) {
-        this.$rootScope.$emit('template-variable-value-updated');
+        this.$rootScope.appEvent('template-variable-value-updated');
         this.dashboard.startRefresh();
       }
     });
@@ -237,8 +249,10 @@ export class VariableSrv {
   setOptionAsCurrent(variable, option) {
     variable.current = _.cloneDeep(option);
 
-    if (_.isArray(variable.current.text)) {
+    if (_.isArray(variable.current.text) && variable.current.text.length > 0) {
       variable.current.text = variable.current.text.join(' + ');
+    } else if (_.isArray(variable.current.value) && variable.current.value[0] !== '$__all') {
+      variable.current.text = variable.current.value.join(' + ');
     }
 
     this.selectOptionsForCurrentValue(variable);
