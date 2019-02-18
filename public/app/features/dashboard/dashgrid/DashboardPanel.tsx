@@ -71,11 +71,11 @@ export class DashboardPanel extends PureComponent<Props, State> {
   private callback(entries: IntersectionObserverEntry[]) {
     // Fast scrolling can send multiple callbacks quickly
     // !intersecting => intersecting => !intersecting in one callback.
-    const intersecting = entries[entries.length-1].isIntersecting;
+    const intersecting = entries[entries.length - 1].isIntersecting;
     if (intersecting !== this.state.isInView) {
-      this.setState( {isInView: intersecting} );
+      this.setState({ isInView: intersecting });
       if (intersecting && !this.state.show) {
-        this.setState( {show: true} );
+        this.setState({ show: true });
       }
     }
   }
@@ -105,7 +105,7 @@ export class DashboardPanel extends PureComponent<Props, State> {
 
     // handle plugin loading & changing of plugin type
     if (!this.state.plugin || this.state.plugin.id !== pluginId) {
-      const plugin = config.panels[pluginId] || getPanelPluginNotFound(pluginId);
+      let plugin = config.panels[pluginId] || getPanelPluginNotFound(pluginId);
 
       // remember if this is from an angular panel
       const fromAngularPanel = this.state.angularPanel != null;
@@ -118,10 +118,15 @@ export class DashboardPanel extends PureComponent<Props, State> {
       }
 
       if (plugin.exports) {
-        this.setState({ plugin: plugin, angularPanel: null });
+        this.setState({ plugin, angularPanel: null });
       } else {
-        plugin.exports = await importPluginModule(plugin.module);
-        this.setState({ plugin: plugin, angularPanel: null });
+        try {
+          plugin.exports = await importPluginModule(plugin.module);
+        } catch (e) {
+          plugin = getPanelPluginNotFound(pluginId);
+        }
+
+        this.setState({ plugin, angularPanel: null });
       }
     }
   }
@@ -195,7 +200,7 @@ export class DashboardPanel extends PureComponent<Props, State> {
     });
 
     return (
-      <div className={containerClass} ref={ e => this.watch(e) }>
+      <div className={containerClass} ref={e => this.watch(e)}>
         <PanelResizer
           isEditing={isEditing}
           panel={panel}
