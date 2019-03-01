@@ -1,0 +1,19 @@
+{
+  "type": "panel",
+  "name": "Scatter",
+  "id": "scatter",
+  "state": "alpha",
+
+  "dataFormats": ["time_series"],
+
+  "info": {
+    "author": {
+      "name": "Grafana Project",
+      "url": "https://grafana.com"
+    },
+    "logos": {
+      "small": "img/icn_scatter.svg",
+      "large": "img/icn_scatter.svg"
+    }
+  }
+}
