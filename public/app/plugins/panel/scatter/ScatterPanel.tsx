@@ -1,12 +1,15 @@
 // Libraries
 import React, { PureComponent } from 'react';
-import echarts from 'echarts';
+import echarts, { EChartOption } from 'echarts';
 
 // Types
 import { ScatterOptions } from './types';
 import { PanelProps } from '@grafana/ui/src/types';
 
 interface Props extends PanelProps<ScatterOptions> {}
+
+// ICON:
+//  https://pngtree.com/free-icon/scatter-plot_317204
 
 export class ScatterPanel extends PureComponent<Props> {
   element: HTMLDivElement | null = null;
@@ -61,11 +64,28 @@ export class ScatterPanel extends PureComponent<Props> {
   }
   //EChartOption<EChartOption.SeriesScatter>
   getEChartOptions = (): any => {
+    //EChartOption<EChartOption.SeriesScatter> => {
     const { options, panelData } = this.props;
-    console.log('TODO panelData to series', panelData);
+
+    const ooo: EChartOption<EChartOption.SeriesScatter> = {};
+
+    console.log('TODO panelData to series', panelData, ooo);
+
     return {
-      xAxis: {},
-      yAxis: {},
+      xAxis: {
+        axisLabel: {
+          formatter: (value, index) => {
+            return value + ' (XXX)';
+          },
+        },
+      },
+      yAxis: {
+        axisLabel: {
+          formatter: (value, index) => {
+            return value + ' (YYY)';
+          },
+        },
+      },
       dataset: {
         source: [
           // Each column is called a dimension.
@@ -73,6 +93,19 @@ export class ScatterPanel extends PureComponent<Props> {
           [12, 44, 55, 66, 2],
           [23, 6, 16, 23, 1],
         ],
+      },
+      tooltip: {
+        // trigger: 'axis',
+        // axisPointer: {
+        //     type: 'cross'
+        // },
+        backgroundColor: 'rgba(245, 245, 245, 0.8)',
+        borderWidth: 1,
+        borderColor: '#ccc',
+        padding: 10,
+        textStyle: {
+          color: '#000',
+        },
       },
       series: {
         type: 'scatter',
@@ -82,6 +115,12 @@ export class ScatterPanel extends PureComponent<Props> {
           y: 1, // Dimension 2 is mapped to y axis.
           tooltip: [2, 3, 4], // Dimension 3, 2, 4 will be displayed in tooltip.
         },
+        // tooltip: {
+        //   formatter: (param) => {
+        //     console.log( 'TTIP formatter', param )
+        //       return 'xxx';
+        //   }
+        // }
       },
       // series: [{
       //     data: [
@@ -101,8 +140,20 @@ export class ScatterPanel extends PureComponent<Props> {
       // }]
     };
   };
+
+  mouseover = evt => {
+    console.log('OVER', evt);
+  };
+
+  mouseout = evt => {
+    console.log('OUT', evt);
+  };
+
   rerender = () => {
     const echartObj = this.renderEchartDom();
+
+    echartObj.on('mouseover', this.mouseover);
+    echartObj.on('mouseout', this.mouseout);
 
     if (this.element) {
       console.log('TODO, get the resize??', echartObj);
@@ -117,7 +168,7 @@ export class ScatterPanel extends PureComponent<Props> {
   };
 
   // return the echart object
-  getEchartsInstance = () => echarts.getInstanceByDom(this.element) || echarts.init(this.element, 'dark', {});
+  getEchartsInstance = () => echarts.getInstanceByDom(this.element) || echarts.init(this.element, null, {});
 
   // render the dom
   renderEchartDom = () => {
