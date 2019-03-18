@@ -1,4 +1,5 @@
 import { getCategories } from './categories';
+import isNumber from 'lodash/isNumber';
 
 export type DecimalCount = number | null | undefined;
 
@@ -34,6 +35,10 @@ export function toFixed(value: number, decimals?: DecimalCount): string {
     return '';
   }
 
+  if (!isNumber(decimals)) {
+    decimals = getDecimalsForValue(value).decimals;
+  }
+
   const factor = decimals ? Math.pow(10, Math.max(0, decimals)) : 1;
   const formatted = String(Math.round(value * factor) / factor);
 
@@ -62,6 +67,12 @@ export function toFixedScaled(
   additionalDecimals?: DecimalCount,
   ext?: string
 ) {
+  if (!isNumber(decimals)) {
+    const info = getDecimalsForValue(value);
+    decimals = info.decimals;
+    scaledDecimals = info.scaledDecimals;
+  }
+
   if (scaledDecimals) {
     if (additionalDecimals) {
       return toFixed(value, scaledDecimals + additionalDecimals) + ext;
@@ -80,6 +91,47 @@ export function toFixedUnit(unit: string): ValueFormatter {
     }
     return toFixed(size, decimals) + ' ' + unit;
   };
+}
+
+export interface DecimalCounts {
+  decimals: DecimalCount;
+  scaledDecimals: DecimalCount;
+}
+
+export function getDecimalsForValue(value: number): DecimalCounts {
+  const delta = value / 2;
+  let dec = -Math.floor(Math.log(delta) / Math.LN10);
+
+  const magn = Math.pow(10, -dec);
+  const norm = delta / magn; // norm is between 1.0 and 10.0
+  let size;
+
+  if (norm < 1.5) {
+    size = 1;
+  } else if (norm < 3) {
+    size = 2;
+    // special case for 2.5, requires an extra decimal
+    if (norm > 2.25) {
+      size = 2.5;
+      ++dec;
+    }
+  } else if (norm < 7.5) {
+    size = 5;
+  } else {
+    size = 10;
+  }
+
+  size *= magn;
+
+  // reduce starting decimals if not needed
+  if (Math.floor(value) === value) {
+    dec = 0;
+  }
+
+  const result: any = {};
+  result.decimals = Math.max(0, dec);
+  result.scaledDecimals = result.decimals - Math.floor(Math.log(size) / Math.LN10) + 2;
+  return result;
 }
 
 // Formatter which scales the unit string geometrically according to the given

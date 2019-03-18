@@ -8,7 +8,8 @@ import kbn from 'app/core/utils/kbn';
 import config from 'app/core/config';
 import TimeSeries from 'app/core/time_series2';
 import { MetricsPanelCtrl } from 'app/plugins/sdk';
-import { GrafanaThemeType, getValueFormat, getColorFromHexRgbOrName } from '@grafana/ui';
+import { GrafanaThemeType, getValueFormat, getColorFromHexRgbOrName, getDecimalsForValue } from '@grafana/ui';
+import isNumber from 'lodash/isNumber';
 
 class SingleStatCtrl extends MetricsPanelCtrl {
   static templateUrl = 'module.html';
@@ -190,7 +191,13 @@ class SingleStatCtrl extends MetricsPanelCtrl {
       data.value = 0;
       data.valueRounded = 0;
     } else {
-      const decimalInfo = this.getDecimalsForValue(data.value);
+      const decimalInfo = isNumber(this.panel.decimals)
+        ? {
+            decimals: this.panel.decimals,
+            scaledDecimals: this.panel.scaledDecimals,
+          }
+        : getDecimalsForValue(data.value);
+
       const formatFunc = getValueFormat(this.panel.format);
 
       data.valueFormatted = formatFunc(
@@ -243,47 +250,6 @@ class SingleStatCtrl extends MetricsPanelCtrl {
     this.render();
   }
 
-  getDecimalsForValue(value) {
-    if (_.isNumber(this.panel.decimals)) {
-      return { decimals: this.panel.decimals, scaledDecimals: null };
-    }
-
-    const delta = value / 2;
-    let dec = -Math.floor(Math.log(delta) / Math.LN10);
-
-    const magn = Math.pow(10, -dec);
-    const norm = delta / magn; // norm is between 1.0 and 10.0
-    let size;
-
-    if (norm < 1.5) {
-      size = 1;
-    } else if (norm < 3) {
-      size = 2;
-      // special case for 2.5, requires an extra decimal
-      if (norm > 2.25) {
-        size = 2.5;
-        ++dec;
-      }
-    } else if (norm < 7.5) {
-      size = 5;
-    } else {
-      size = 10;
-    }
-
-    size *= magn;
-
-    // reduce starting decimals if not needed
-    if (Math.floor(value) === value) {
-      dec = 0;
-    }
-
-    const result: any = {};
-    result.decimals = Math.max(0, dec);
-    result.scaledDecimals = result.decimals - Math.floor(Math.log(size) / Math.LN10) + 2;
-
-    return result;
-  }
-
   setValues(data) {
     data.flotpairs = [];
 
@@ -319,7 +285,7 @@ class SingleStatCtrl extends MetricsPanelCtrl {
         data.value = this.series[0].stats[this.panel.valueName];
         data.flotpairs = this.series[0].flotpairs;
 
-        const decimalInfo = this.getDecimalsForValue(data.value);
+        const decimalInfo = getDecimalsForValue(data.value);
 
         data.valueFormatted = formatFunc(
           data.value,
