@@ -35,9 +35,9 @@ export function toFixed(value: number, decimals?: DecimalCount): string {
     return '';
   }
 
-  if (!isNumber(decimals)) {
-    decimals = getDecimalsForValue(value).decimals;
-  }
+  // if (!isNumber(decimals)) {
+  //   decimals = getDecimalsForValue(value).decimals;
+  // }
 
   const factor = decimals ? Math.pow(10, Math.max(0, decimals)) : 1;
   const formatted = String(Math.round(value * factor) / factor);
