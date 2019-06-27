@@ -1,17 +1,24 @@
 import execa from 'execa';
-import fs from 'fs';
-import { changeCwdToGrafanaUi, restoreCwd } from '../utils/cwd';
+import * as fs from 'fs';
+import { changeCwdToGrafanaUi, restoreCwd, changeCwdToGrafanaToolkit } from '../utils/cwd';
 import chalk from 'chalk';
 import { useSpinner } from '../utils/useSpinner';
 import { Task, TaskRunner } from './task';
 
-let distDir, cwd;
+let distDir: string, cwd: string;
 
+// @ts-ignore
 export const clean = useSpinner<void>('Cleaning', async () => await execa('npm', ['run', 'clean']));
 
-const compile = useSpinner<void>('Compiling sources', () => execa('tsc', ['-p', './tsconfig.build.json']));
-
-const rollup = useSpinner<void>('Bundling', () => execa('npm', ['run', 'build']));
+// @ts-ignore
+const compile = useSpinner<void>('Compiling sources', async () => {
+  try {
+    await execa('tsc', ['-p', './tsconfig.json']);
+  } catch (e) {
+    console.log(e);
+    throw e;
+  }
+});
 
 export const savePackage = useSpinner<{
   path: string;
@@ -28,9 +35,11 @@ export const savePackage = useSpinner<{
   });
 });
 
-const preparePackage = async pkg => {
-  pkg.main = 'index.js';
-  pkg.types = 'index.d.ts';
+const preparePackage = async (pkg: any) => {
+  pkg.bin = {
+    'grafana-toolkit': './bin/grafana-toolkit.dist.js',
+  };
+
   await savePackage({
     path: `${cwd}/dist/package.json`,
     pkg,
@@ -38,7 +47,13 @@ const preparePackage = async pkg => {
 };
 
 const moveFiles = () => {
-  const files = ['README.md', 'CHANGELOG.md', 'index.js'];
+  const files = [
+    'README.md',
+    'CHANGELOG.md',
+    'bin/grafana-toolkit.dist.js',
+    'src/config/tsconfig.plugin.json',
+    'src/config/tslint.plugin.json',
+  ];
   return useSpinner<void>(`Moving ${files.join(', ')} files`, async () => {
     const promises = files.map(file => {
       return new Promise((resolve, reject) => {
@@ -56,21 +71,17 @@ const moveFiles = () => {
   })();
 };
 
-const buildTaskRunner: TaskRunner<void> = async () => {
-  cwd = changeCwdToGrafanaUi();
+const toolkitBuildTaskRunner: TaskRunner<void> = async () => {
+  cwd = changeCwdToGrafanaToolkit();
   distDir = `${cwd}/dist`;
   const pkg = require(`${cwd}/package.json`);
   console.log(chalk.yellow(`Building ${pkg.name} (package.json version: ${pkg.version})`));
-
   await clean();
   await compile();
-  await rollup();
   await preparePackage(pkg);
+  fs.mkdirSync('./dist/bin');
   await moveFiles();
-
   restoreCwd();
 };
 
-export const buildTask = new Task<void>();
-buildTask.setName('@grafana/ui build');
-buildTask.setRunner(buildTaskRunner);
+export const toolkitBuildTask = new Task<void>('@grafana/toolkit build', toolkitBuildTaskRunner);

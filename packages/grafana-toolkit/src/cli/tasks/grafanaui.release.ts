@@ -1,14 +1,16 @@
+// @ts-ignore
 import execa from 'execa';
 import { execTask } from '../utils/execTask';
 import { changeCwdToGrafanaUiDist, changeCwdToGrafanaUi, restoreCwd } from '../utils/cwd';
-import semver from 'semver';
-import inquirer from 'inquirer';
+import { ReleaseType, inc } from 'semver';
+import { prompt } from 'inquirer';
 import chalk from 'chalk';
 import { useSpinner } from '../utils/useSpinner';
 import { savePackage, buildTask, clean } from './grafanaui.build';
 import { TaskRunner, Task } from './task';
 
 type VersionBumpType = 'prerelease' | 'patch' | 'minor' | 'major';
+
 interface ReleaseTaskOptions {
   publishToNpm: boolean;
   usePackageJsonVersion: boolean;
@@ -16,43 +18,29 @@ interface ReleaseTaskOptions {
 }
 
 const promptBumpType = async () => {
-  return inquirer.prompt<{ type: VersionBumpType }>([
+  return prompt<{ type: VersionBumpType }>([
     {
       type: 'list',
       message: 'Select version bump',
       name: 'type',
       choices: ['prerelease', 'patch', 'minor', 'major'],
-      validate: answer => {
-        if (answer.length < 1) {
-          return 'You must choose something';
-        }
-
-        return true;
-      },
     },
   ]);
 };
 
 const promptPrereleaseId = async (message = 'Is this a prerelease?', allowNo = true) => {
-  return inquirer.prompt<{ id: string }>([
+  return prompt<{ id: string }>([
     {
       type: 'list',
       message: message,
       name: 'id',
       choices: allowNo ? ['no', 'alpha', 'beta'] : ['alpha', 'beta'],
-      validate: answer => {
-        if (answer.length < 1) {
-          return 'You must choose something';
-        }
-
-        return true;
-      },
     },
   ]);
 };
 
 const promptConfirm = async (message?: string) => {
-  return inquirer.prompt<{ confirmed: boolean }>([
+  return prompt<{ confirmed: boolean }>([
     {
       type: 'confirm',
       message: message || 'Is that correct?',
@@ -65,7 +53,12 @@ const promptConfirm = async (message?: string) => {
 // Since Grafana core depends on @grafana/ui highly, we run full check before release
 const runChecksAndTests = async () =>
   useSpinner<void>(`Running checks and tests`, async () => {
-    await execa('npm', ['run', 'test']);
+    try {
+      await execa('npm', ['run', 'test']);
+    } catch (e) {
+      console.log(e);
+      throw e;
+    }
   })();
 
 const bumpVersion = (version: string) =>
@@ -133,13 +126,13 @@ const releaseTaskRunner: TaskRunner<ReleaseTaskOptions> = async ({
       console.log(type);
       if (type === 'prerelease') {
         const { id } = await promptPrereleaseId('What kind of prerelease?', false);
-        nextVersion = semver.inc(pkg.version, type, id);
+        nextVersion = inc(pkg.version, type, id as any);
       } else {
         const { id } = await promptPrereleaseId();
         if (id !== 'no') {
-          nextVersion = semver.inc(pkg.version, `pre${type}`, id);
+          nextVersion = inc(pkg.version, `pre${type}` as ReleaseType, id as any);
         } else {
-          nextVersion = semver.inc(pkg.version, type);
+          nextVersion = inc(pkg.version, type as ReleaseType);
         }
       }
     } else {
@@ -190,6 +183,4 @@ const releaseTaskRunner: TaskRunner<ReleaseTaskOptions> = async ({
   }
 };
 
-export const releaseTask = new Task<ReleaseTaskOptions>();
-releaseTask.setName('@grafana/ui release');
-releaseTask.setRunner(releaseTaskRunner);
+export const releaseTask = new Task<ReleaseTaskOptions>('@grafana/ui release', releaseTaskRunner);
